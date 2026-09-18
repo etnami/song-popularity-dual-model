@@ -2,7 +2,7 @@
 
 Undergraduate/MSc coursework project (University of Sheffield). Tests whether 9 acoustic features plus explicitness can predict whether a song is popular, using two model families (logistic regression and Random Forest), each run with and without the explicitness variable, plus a stepwise-reduced logistic regression.
 
-> **Reproducibility note:** the raw dataset (merged Spotify-style track, artist, and popularity files) is not included in this repo, so `analysis.Rmd` cannot be rerun end-to-end from this repo alone. All headline numbers below were traced to specific lines of the code and cross-checked against the coursework's own results tables rather than taken from the write-up's prose; see the Verification note for exactly what that involved, including two real bugs found in the original code.
+> **Reproducibility note:** the raw dataset (merged Spotify-style track, artist, and popularity files) is not included in this repo, so `song_pop_code.Rmd` cannot be rerun end-to-end from this repo alone. All headline numbers below were traced to specific lines of the code and cross-checked against the coursework's own results tables rather than taken from the write-up's prose; see the Verification note for exactly what that involved, including two real bugs found in the original code.
 
 ## Key results
 
@@ -49,7 +49,7 @@ Five models were fit in total: two logistic regressions (with and without `expli
 02-song-popularity-dual-model/
 ├── README.md                                    ← you are here
 ├── song_popularity_results_and_conclusions.pdf  ← Results, Discussion and Conclusions sections only (not the full write-up)
-├── analysis.Rmd                                  ← full analysis code
+├── song_pop_code.Rmd                                  ← full analysis code
 └── figures/
     ├── rf1_vs_rf2_auc_comparison.png
     ├── rf2_feature_importance.png
@@ -72,13 +72,13 @@ Five models were fit in total: two logistic regressions (with and without `expli
 
 ## How to run
 
-1. Install R and the packages `analysis.Rmd` loads at the top (tidyverse, caret, pROC, randomForest, viridis, patchwork, DescTools, car, sjPlot).
+1. Install R and the packages `song_pop_code.Rmd` loads at the top (tidyverse, caret, pROC, randomForest, viridis, patchwork, DescTools, car, sjPlot).
 2. The script expects several pre-cleaned source files (song, artist, musical-feature, and popularity data) that are not included in this repo; see Data, below.
 3. Run top to bottom. A fixed seed is set before each train/test split and each model fit.
 
 ## Data
 
-The underlying track/artist/popularity dataset is not redistributed here (Spotify-derived data, not the coursework author's to redistribute). `analysis.Rmd` is included in full so the methodology is auditable even though it can't be rerun without the source files.
+The underlying track/artist/popularity dataset is not redistributed here (Spotify-derived data, not the coursework author's to redistribute). `song_pop_code.Rmd` is included in full so the methodology is auditable even though it can't be rerun without the source files.
 
 ## Limitations
 
