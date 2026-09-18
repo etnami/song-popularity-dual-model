@@ -1,0 +1,1440 @@
+---
+title: "Song Popularity: Dual-Model Approach"
+output: word_document
+date: "2026-01-29"
+always_allow_html: true
+geometry: margin=1in
+---
+
+```{r fig.show='hide', message=FALSE, warning=FALSE, results='hide'}
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(caret)
+library(officer)
+library(flextable)
+library(knitr)
+library(kableExtra)
+library(ggcorrplot)
+library(viridisLite)
+library(scales)
+library(MASS)
+library(DescTools)
+library(pROC)
+library(car)
+library(randomForest)
+library(patchwork)
+library(broom)
+
+#-----------------------------------------------------------------------------------------------------------------------------------------
+
+#DATA PREPARATION
+#starting by merging 4 files from the music dataset related to my research questions
+#my research questions focus on variables for artist type, acoustic features, explicitness, and popularity rating
+#reading in my cleaned files (pre-cleaned using excel) one-by-one via left-join function
+#checking details are correctly merged together before moving onto the next
+
+songs_cleaned <- read_csv("songs cleaned converted.csv", col_names = TRUE)
+songs_cleaned
+
+artists_cleaned <- read_csv("artists cleaned converted.csv", col_names = TRUE)
+artists_cleaned
+
+#left-joining artists file to songs file based on artist_id
+#inspecting output using my original cleaned dataset to ensure everything imported correctly
+#including amount and type of variable, and amount of rows of data
+
+songs_artists <- songs_cleaned %>%
+  left_join(artists_cleaned, by = "artist_id")
+songs_artists
+
+#checking summaries and dataset features of newly-joined file to ensure it merged correctly
+
+str(songs_artists)
+head(songs_artists)
+tail(songs_artists)
+summary(songs_artists)
+colnames(songs_artists)
+dim(songs_artists)
+
+#importing and merging a new cleaned file: musical features
+musical_features <- read_csv("acoustic features cleaned converted.csv", col_names = TRUE)
+musical_features
+
+songs_artists_musicalfeatures <- songs_artists %>%
+  left_join(musical_features, by = "song_id")
+songs_artists_musicalfeatures
+
+#checking summaries and dataset features of newly-joined file to ensure it merged correctly
+
+str(songs_artists_musicalfeatures)
+head(songs_artists_musicalfeatures)
+tail(songs_artists_musicalfeatures)
+summary(songs_artists_musicalfeatures)
+colnames(songs_artists_musicalfeatures)
+dim(songs_artists_musicalfeatures)
+
+#importing and merging my final pre-cleaned file: song ispop
+
+song_ispop <- read_csv("song ispop cleaned converted.csv", col_names = TRUE)
+song_ispop
+
+songs_artists_musicalfeatures_pop <- songs_artists_musicalfeatures %>%
+  left_join(song_ispop, by = "song_id")
+songs_artists_musicalfeatures_pop
+
+#checking summaries and dataset features of newly-joined file to ensure all merged correctly
+
+str(songs_artists_musicalfeatures_pop)
+head(songs_artists_musicalfeatures_pop)
+tail(songs_artists_musicalfeatures_pop)
+summary(songs_artists_musicalfeatures_pop)
+dim(songs_artists_musicalfeatures_pop)
+colnames(songs_artists_musicalfeatures_pop)
+
+#changing name of merged dataset to make it more compact, simple, and readable
+
+combined_dataset <- songs_artists_musicalfeatures_pop
+
+#exporting my combined dataset as a csv file to save progress before making any other preparations with the data
+
+write.table(combined_dataset, "combined music dataset.csv", sep= ",", row.names = FALSE)
+
+#doing further cleaning in r to deal with missing values I missed during initial cleaning in excel
+
+colSums(is.na(combined_dataset))
+sum(is.na(combined_dataset))
+
+#there are 10 missing values labelled NA
+#due to there only being a small amount of missing values I am removing these from my dataset
+#removing using drop_na function from tidyr
+
+drop_na(combined_dataset)
+
+combined_dataset <- combined_dataset %>% drop_na()
+
+#viewing dataset to make sure these were removed correctly by checking number of rows
+
+#filtering my dataset by year: getting data between 2000 and 2018
+#to fit my research questions being based on music in the new millennium and new-internet age when people began listening to and streaming music online
+#this was done because [ lit search ]
+
+dataset_range <- combined_dataset %>%
+  filter(year >= 2000 & year <= 2018)
+
+#checking this filtered correctly
+
+summary(dataset_range)
+
+#checking for further NA values in whole dataset and in specific column I intend to use before beginning exploratory analysis
+
+sum(is.na(dataset_range))
+
+sum(is.na(dataset_range$is_pop))
+
+#no further NA values were found
+
+head(dataset_range)
+print(head(dataset_range), width = Inf)
+
+
+
+#making table to show in report
+flex_head_table <- dataset_range %>%
+  head(5) %>%
+  dplyr::select(year, artist_name.y, song_name, main_genre, explicit, is_pop, acousticness, danceability, instrumentalness, tempo, liveness, loudness, valence, energy, speechiness) %>% 
+  flextable() %>%
+  width(width = 0.6) %>%
+  colformat_num(j = "year", big.mark = "") %>%
+  add_header_lines(values = "Initial dataset before EDA") %>%
+  add_header_lines(values = "Initial Data Preview") %>%
+  font(fontname = "Times New Roman", part = "all") %>%
+  fontsize(size = 9, part = "all") %>%         # Smaller font helps it fit
+  align(align = "center", part = "all") %>% 
+  
+  set_header_labels(
+    year = "Year",
+    artist_name.y = "Artist",
+    song_name = "Song",
+    main_genre = "Genre",
+    explicit = "Explicit",
+    is_pop = "Popular",
+    speechiness = "Speechi.",
+    energy = "Energy",
+    valence = "Valence",
+    loudness = "Loudn.",
+    liveness = "Liven.",
+    tempo = "Tempo",
+    instrumentalness = "Instru.",
+    danceability = "Dancea.",
+    acousticness = "Acoust."
+  ) %>%
+  border_remove() %>%
+  hline_top(part = "header", border = officer::fp_border(color="lightgrey", width = 2)) %>%
+  hline_bottom(part = "body", border = officer::fp_border(color="lightgrey", width = 2))
+
+flex_head_table
+#-----------------------------------------------------------------------------------------------------------------------------------------
+
+#EXPLORATORY DATA ANALYSIS
+
+#MUSICAL CHARACTERISTICS AND SONG POPULARITY
+
+#choosing to graph data about my 9 chosen musical characteristics (independent variables) and popularity using boxplots because i am plotting a continuous variable against a categorical one 
+
+#boxplot of valence against is_pop
+
+ggplot(dataset_range, aes(x = is_pop, y = valence, fill = is_pop)) +
+  geom_boxplot() +
+  scale_fill_manual(
+    values = c("FALSE" = "turquoise", "TRUE" = "orange"),
+    labels = c("Not Popular", "Popular")
+  ) +
+  scale_x_discrete(labels = c("FALSE" = "Not Popular", "TRUE" = "Popular")) +
+  labs(
+    title = "Valence Distribution by Song Popularity",
+    subtitle = "Comparing musical 'happiness' across popularity classes",
+    x = "Popularity Status",
+    y = "Valence Score",
+    fill = "Song Category"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "right")
+
+#boxplot of tempo against is_pop
+
+ggplot(dataset_range, aes(x = is_pop, y = tempo, fill = is_pop)) +
+  geom_boxplot() +
+  scale_fill_manual(
+    values = c("FALSE" = "turquoise", "TRUE" = "orange"),
+    labels = c("Not Popular", "Popular")
+  ) +
+  scale_x_discrete(labels = c("FALSE" = "Not Popular", "TRUE" = "Popular")) +
+  labs(
+    title = "Tempo Distribution by Song Popularity",
+    subtitle = "Comparing musical tempo across popularity classes",
+    x = "Popularity Status",
+    y = "Tempo Score",
+    fill = "Song Category"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "right")
+
+#boxplot of speechiness against is_pop
+
+ggplot(dataset_range, aes(x = is_pop, y = speechiness, fill = is_pop)) +
+  geom_boxplot() +
+  scale_fill_manual(
+    values = c("FALSE" = "turquoise", "TRUE" = "orange"),
+    labels = c("Not Popular", "Popular")
+  ) +
+  scale_x_discrete(labels = c("FALSE" = "Not Popular", "TRUE" = "Popular")) +
+  labs(
+    title = "Speechiness Distribution by Song Popularity",
+    subtitle = "Comparing musical speechiness across popularity classes",
+    x = "Popularity Status",
+    y = "Speechiness Score",
+    fill = "Song Category"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "right")
+
+#boxplot of loudness against is_pop
+
+ggplot(dataset_range, aes(x = is_pop, y = loudness, fill = is_pop)) +
+  geom_boxplot() +
+  scale_fill_manual(
+    values = c("FALSE" = "turquoise", "TRUE" = "orange"),
+    labels = c("Not Popular", "Popular")
+  ) +
+  scale_x_discrete(labels = c("FALSE" = "Not Popular", "TRUE" = "Popular")) +
+  labs(
+    title = "Loudness Distribution by Song Popularity",
+    subtitle = "Comparing musical loudness across popularity classes",
+    x = "Popularity Status",
+    y = "Loudness Score",
+    fill = "Song Category"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "right")
+
+#boxplot of liveness against is_pop
+
+ggplot(dataset_range, aes(x = is_pop, y = liveness, fill = is_pop)) +
+  geom_boxplot() +
+  scale_fill_manual(
+    values = c("FALSE" = "turquoise", "TRUE" = "orange"),
+    labels = c("Not Popular", "Popular")
+  ) +
+  scale_x_discrete(labels = c("FALSE" = "Not Popular", "TRUE" = "Popular")) +
+  labs(
+    title = "Liveness Distribution by Song Popularity",
+    subtitle = "Comparing musical liveness across popularity classes",
+    x = "Popularity Status",
+    y = "Liveness Score",
+    fill = "Song Category"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "right")
+
+#boxplot of instrumentalness against is_pop
+
+ggplot(dataset_range, aes(x = is_pop, y = instrumentalness, fill = is_pop)) +
+  geom_boxplot() +
+  scale_fill_manual(
+    values = c("FALSE" = "turquoise", "TRUE" = "orange"),
+    labels = c("Not Popular", "Popular")
+  ) +
+  scale_x_discrete(labels = c("FALSE" = "Not Popular", "TRUE" = "Popular")) +
+  labs(
+    title = "Instrumentalness Distribution by Song Popularity",
+    subtitle = "Comparing musical instrumentalness across popularity classes",
+    x = "Popularity Status",
+    y = "Instrumentalness Score",
+    fill = "Song Category"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "right")
+
+#boxplot of energy against is_pop
+
+ggplot(dataset_range, aes(x = is_pop, y = energy, fill = is_pop)) +
+  geom_boxplot() +
+  scale_fill_manual(
+    values = c("FALSE" = "turquoise", "TRUE" = "orange"),
+    labels = c("Not Popular", "Popular")
+  ) +
+  scale_x_discrete(labels = c("FALSE" = "Not Popular", "TRUE" = "Popular")) +
+  labs(
+    title = "Energy Distribution by Song Popularity",
+    subtitle = "Comparing musical energy across popularity classes",
+    x = "Popularity Status",
+    y = "Energy Score",
+    fill = "Song Category"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "right")
+
+#boxplot of danceability against is_pop
+
+ggplot(dataset_range, aes(x = is_pop, y = danceability, fill = is_pop)) +
+  geom_boxplot() +
+  scale_fill_manual(
+    values = c("FALSE" = "turquoise", "TRUE" = "orange"),
+    labels = c("Not Popular", "Popular")
+  ) +
+  scale_x_discrete(labels = c("FALSE" = "Not Popular", "TRUE" = "Popular")) +
+  labs(
+    title = "Danceability Distribution by Song Popularity",
+    subtitle = "Comparing musical danceability across popularity classes",
+    x = "Popularity Status",
+    y = "Danceability Score",
+    fill = "Song Category"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "right")
+
+#boxplot of acousticness against is_pop
+
+ggplot(dataset_range, aes(x = is_pop, y = acousticness, fill = is_pop)) +
+  geom_boxplot() +
+  scale_fill_manual(
+    values = c("FALSE" = "turquoise", "TRUE" = "orange"),
+    labels = c("Not Popular", "Popular")
+  ) +
+  scale_x_discrete(labels = c("FALSE" = "Not Popular", "TRUE" = "Popular")) +
+  labs(
+    title = "Acousticness Distribution by Song Popularity",
+    subtitle = "Comparing musical acousticness across popularity classes",
+    x = "Popularity Status",
+    y = "Acousticness Score",
+    fill = "Song Category"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "right")
+
+#displaying all boxplots side-by-side for easier comparison using facet_wrap function
+
+long_data <- dataset_range %>%
+  pivot_longer(
+    cols = c(liveness, speechiness, valence, energy, danceability, acousticness, instrumentalness, loudness, tempo),
+    names_to = "metric",       
+    values_to = "value"        
+  )
+
+head(long_data)
+
+
+ggplot(long_data, aes(x = is_pop, y = value, fill = is_pop)) +
+  geom_boxplot(outlier.size = 0.5, alpha = 0.8) +
+  scale_fill_manual(
+    values = c("FALSE" = "orange", "TRUE" = "turquoise"),
+    labels = c("Not Popular", "Popular")
+  ) +
+  scale_x_discrete(labels = c("FALSE" = "Not Popular", "TRUE" = "Popular")) +
+  labs(
+    title = "Distribution of Multiple Musical Features by Song Popularity",
+    subtitle = "Acoustic profiles of 'Hits' vs 'Non-Hits' (2000-2018)",
+    x = "Popularity Outcome",
+    y = "Musical Characteristic Score (Standardized/Raw)",
+    fill = "Status"
+  ) +
+  theme_minimal() +
+  facet_wrap(~ metric, scales = "free_y") +
+  theme(
+    strip.text = element_text(face = "bold", size = 10),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "bottom"
+  )
+
+#-----------------------------------------------------------------------------------------------------------------------------------------
+#choosing to perform a correlation matrix for musical characteristic variable and is_pop to see which characteristics have a higher correlation with popularity than others
+
+#CORRELATION MATRIX 
+
+#are these features alone significantly correlated with popularity?
+
+musical_characteristics <- c("danceability", "liveness", "tempo", "loudness", "energy", "valence", "acousticness", "instrumentalness", "speechiness")
+
+correlation_matrix_ispop <- dataset_range %>%
+  mutate(is_pop_numeric = if_else(is_pop == "TRUE", 1, 0)) %>%
+  dplyr::select(is_pop_numeric, all_of(musical_characteristics))
+
+#showing pearson correlation matrix
+
+correlation_matrix <- cor(correlation_matrix_ispop)
+
+is_pop_correlations <- correlation_matrix[1, -1] 
+
+#printing and rounding to 3 decimal places
+
+print("Correlation of is_pop (1/0) with Musical Characteristics:")
+round(is_pop_correlations, 3)
+
+#showing the correlation matrix in visual format to make it easier to interpret
+
+musical_characteristics <- c("danceability", "liveness", "tempo", "loudness", "energy", "valence", "acousticness", "instrumentalness", "speechiness")
+
+correlation_matrix_ispop <- dataset_range %>%
+  mutate(is_pop_numeric = if_else(is_pop == "TRUE", 1, 0)) %>%
+  dplyr::select(is_pop_numeric, all_of(musical_characteristics))
+
+correlation_matrix <- cor(correlation_matrix_ispop)
+is_pop_correlations <- correlation_matrix[1, -1]
+
+correlation_matrix_df <- data.frame(
+  Feature = names(is_pop_correlations),
+  Correlation = as.numeric(is_pop_correlations)
+) %>%
+  mutate(Direction = ifelse(Correlation > 0, "Positive", "Negative"))
+
+correlation_matrix_df$Feature <- reorder(correlation_matrix_df$Feature, abs(correlation_matrix_df$Correlation))
+
+correlation_plot <- ggplot(correlation_matrix_df, aes(x = Feature, y = Correlation, fill = Direction)) +
+  geom_col() + 
+  #putting musical characteristics on the y axis to improve readability
+  coord_flip() + 
+  labs(
+    title = "Correlation of Musical Characteristics with Song Popularity",
+    subtitle = "Point-Biserial Correlation (is_pop coded as 1 = Popular, 0 = Not Popular)",
+    x = NULL,
+    y = "Correlation Coefficient",
+    fill = "Correlation Direction"
+  ) +
+  scale_fill_manual(values = c("Positive" = "orange", "Negative" = "darkblue")) +
+  #putting vertical line at 0 for visual reference
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  theme_minimal() +
+  geom_text(aes(label = round(Correlation, 3)), 
+            hjust = ifelse(correlation_matrix_df$Correlation > 0, -0.2, 1.2),
+            size = 3) +
+  scale_y_continuous(limits = c(min(correlation_matrix_df$Correlation) * 1.3, max(correlation_matrix_df$Correlation) * 1.3))
+
+#printing correlation plot
+
+correlation_plot
+
+#the further away from 0/longer the bar the stronger the correlation
+#energy and loudness strongest positively correlation with popularity
+#speechiness, acousticness, and danceability strongest negative correlation with popularity
+#however all values are extremely small and show very weak correlation or no correlation at all
+
+
+#APA style table showing Pearson correlation matrix
+correlation_df <- as.data.frame(round(correlation_matrix, 3))
+54
+
+correlation_df %>%
+  kable(caption = "Pearson Correlation Matrix for Acoustic Features"
+  ) %>%
+  kable_classic(full_width = F, html_font = "Times New Roman")
+
+#looking for multicolinearity because variables with high correlation with one another can distort the models
+
+
+
+viridis_cols <- viridis(3)
+
+ggcorrplot(correlation_matrix, 
+           hc.order = TRUE, 
+           type = "lower",
+           lab = TRUE, 
+           lab_size = 3,
+           colors = viridis_cols, 
+           title = "Acoustic Feature Correlation (Viridis Palette)",
+           ggtheme = theme_minimal())
+
+#energy and loudness show the highest correlation at 0.7
+#this is a strong positive correlation and could distort my model
+#energy increasing is likely to also have increased loudness and vice versa
+
+#-----------------------------------------------------------------------------------------------------------------------------------------
+
+#SONG EXPLICITNESS AND SONG POPULARITY
+
+#does a song being labelled explicit correlate with whether that song is popular?
+
+#showing this with a stacked bar chart because i am looking at percentages and proportions- and it allows for comparison even if volume of songs in each category is different
+
+explicit_plot <- dataset_range %>%
+  group_by(explicit, is_pop) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(explicit) %>%
+  mutate(percentage = n / sum(n))
+
+ggplot(explicit_plot, aes(x = explicit, y = percentage, fill = is_pop)) +
+  geom_col(position = "fill") +
+  geom_text(aes(label = percent(percentage, accuracy = 1)), 
+            position = position_fill(vjust = 0.5),
+            color = "white", 
+            fontface = "bold") +
+  scale_fill_manual(
+    values = c("FALSE" = "turquoise", "TRUE" = "orange"),
+    labels = c("Not Popular", "Popular")
+  ) +
+  scale_x_discrete(labels = c("FALSE" = "Non-explicit", "TRUE" = "Explicit")) +
+  scale_y_continuous(labels = percent) +
+  labs(
+    title = "Proportion of Popular Songs by Explicit Content",
+    subtitle = "Comparing popularity probability across explicit and non-explicit content",
+    x = "Song Content Type",
+    y = "Percentage of Songs",
+    fill = "Popularity Status"
+  ) +
+  theme_minimal()
+
+#-----------------------------------------------------------------------------------------------------------------------------------------
+#CHI SQUARED TEST
+#running chi-squared to test significance of remaining binary explicitness variable with popularity
+#doing this to see if popularity and explicitness are significantly associated
+
+testing_significance <- table(dataset_range$is_pop, dataset_range$explicit)
+
+print(testing_significance)
+
+chi_square_explicit <- chisq.test(testing_significance)
+
+print(chi_square_explicit)
+
+#p-value 0.006 - this relationship is significant
+
+#artist type and popularity- a variable i did not explore but could be of note in future research if shows significance
+
+testing_significance2 <- table(dataset_range$is_pop, dataset_range$artist_type)
+
+print(testing_significance2)
+
+chi_square_artist_type <- chisq.test(testing_significance2)
+
+print(chi_square_artist_type)
+
+contingency_table <- table(dataset_range$explicit, dataset_range$is_pop)
+print(contingency_table)
+
+prop_table <- prop.table(contingency_table, margin = 1) 
+round(prop_table * 100, 2)
+
+#making a table summary for my report
+contingency_summary <- dataset_range %>%
+  group_by(explicit) %>%
+  summarise(
+    Total = n(),
+    Popular = sum(is_pop == TRUE),
+    Not_Popular = sum(is_pop == FALSE)
+  ) %>%
+  mutate(Hit_Rate = percent(Popular / Total))
+
+knitr::kable(contingency_summary, 
+             caption = "Contingency Table: Song Explicitness vs. Popularity")
+
+
+#p-value 0.047 - this relationship is significant
+
+#-----------------------------------------------------------------------------------------------------------------------------------------
+
+#checking for class balance before training any models
+class_counts <- table(dataset_range$is_pop)
+print(class_counts)
+
+prop.table(class_counts) * 100
+
+#class balance is 62/37 which is unbalanced but still suitable for my chosen models
+
+#-----------------------------------------------------------------------------------------------------------------------------------------
+
+#CLASSIFICATION MODELS
+
+#LOGISTIC REGRESSION MODELS
+
+
+
+#mixing up my data before splitting it into training vs testing as a precaution
+
+dataset_range_updated <- dataset_range %>%
+  mutate(is_pop_updated = factor(ifelse(is_pop == TRUE, "1", "0"), 
+                                 levels = c("0", "1")))
+dataset_range_updated
+
+
+#setting seed so same dataset is selected each time code is run, making for easier replicability
+
+set.seed(345)
+
+#shuffling data so the 70-30 split is random
+
+dataset_range_updated <- dataset_range_updated[sample(1:nrow(dataset_range_updated)), ]
+
+#using 70% of data for training, and remaining 30% for testing the model
+
+train_size = 0.7
+train_indices <- 1:round(train_size * nrow(dataset_range_updated))
+
+dataset_range_train <- dataset_range_updated[train_indices, ]
+dataset_range_test  <- dataset_range_updated[-train_indices, ]
+
+dataset_range_train$is_pop_updated <- factor(dataset_range_train$is_pop_updated, levels = c("0", "1"))
+dataset_range_test$is_pop_updated  <- factor(dataset_range_test$is_pop_updated, levels = c("0", "1"))
+
+levels(dataset_range_train$is_pop_updated) 
+levels(dataset_range_test$is_pop_updated)
+
+print(levels(dataset_range_train$is_pop_updated))
+
+#training my logistic regression model, loading all musical characteristics into it
+
+logistic_regression <- glm(is_pop_updated ~ acousticness + danceability + instrumentalness + liveness + energy + loudness + speechiness + valence + tempo, data = dataset_range_train, family = binomial )
+
+logistic_regression
+
+#converting to odds ratio for easier readability
+#odds ratio shows relationship/association of acoustic features with popularity
+
+odds_ratios <- exp(coef(logistic_regression))
+print(odds_ratios)
+#values between 0.429 (speechiness) and 1.088 (valence)
+
+#testing the trained model using my test data
+
+test_probabilities <- predict(logistic_regression, 
+                              newdata = dataset_range_test, 
+                              type = "response")
+test_predictions_scores <- ifelse(test_probabilities > 0.5, "1", "0")
+
+predicted_factors <- factor(test_predictions_scores, levels = c("0", "1"))
+actual_factors <- dataset_range_test$is_pop_updated
+
+#-----------------------------------------------------------------------------------------------------------------------------------------
+#EVALUATING MY MODEL: CONFUSION MATRIX
+
+
+logistic_regression_confusion_matrix_results <- confusionMatrix(data = predicted_factors,
+                                                                reference = actual_factors,
+                                                                positive = "1")
+
+print(logistic_regression_confusion_matrix_results)
+
+#this model is 63.08% accurate
+#my logistic regression model did not have any false positives
+#but had 738 false negatives (missed every popular song/failed to identify them)
+#0% sensitivity - it correctly identified 1261 unpopular songs but did not identify a single popular song
+#100% specificity- my model labelled everything as 0 so had 100% rate of specificity however this is due to the model not being able to predict the positive class (class 1)
+#accuracy value was exactly the same as NIR value (0.6308 - 63.08%) which means my model performs the same as a random guess
+#p-value of 0.51 shows my model is not statistically better than the NIR
+
+
+
+
+#running nagelkerke
+
+PseudoR2(logistic_regression, which = "Nagelkerke")
+
+#output of 0.004 (0.004149534) shows model is no better than a 'null' model that assumes there are no predictors
+#models suggests the musical characteristics have no predictive power in determining popularity
+
+#calculating AUC because since the dataset is imbalanced the 'accuracy' metric is not a reliable measure
+#AUC assesses if my model can distinguish between the 2 classes
+#seeing if logistic regression model is better at predicting song popularity than random chance
+#AUC of 0.5 means model is as good as random chance - need above 0.7 for model to be successfully doing what it intends to do
+
+
+
+set.seed(345)
+
+roc_curve <- roc(dataset_range_test$is_pop_updated, test_probabilities)
+
+print(paste("The AUC is:", auc(roc_curve)))
+
+#my AUC value is 0.514 so only marginally better than simply random chance at predicting popularity classes
+
+line_color <- viridis(10)[2]
+
+plot(roc_curve, 
+     col = line_color, 
+     lwd = 3, 
+     main = "Logistic Regression 1: ROC Curve", 
+     print.auc = TRUE,
+     print.auc.x = 0.5, print.auc.y = 0.5,
+     grid = TRUE)
+abline(a = 1, b = -1, lty = 2, col = "grey")
+
+
+#running a second logistic regression including explicitness as this was found to be a significant association according to my chi squared test
+
+set.seed(345)
+
+logistic_regression_2 <- glm(is_pop_updated ~ acousticness + danceability + instrumentalness + liveness + energy + loudness + speechiness + valence + tempo + explicit, data = dataset_range_train, family = binomial )
+
+logistic_regression_2
+
+odds_ratios_2 <- exp(coef(logistic_regression_2))
+print(odds_ratios_2)
+
+#values between 0.54 (speechiness) and 1.2 (energy)
+
+test_probabilities_2 <- predict(logistic_regression_2, 
+                              newdata = dataset_range_test, 
+                              type = "response")
+test_predictions_scores_2 <- ifelse(test_probabilities_2 > 0.5, "1", "0")
+
+predicted_factors_2 <- factor(test_predictions_scores_2, levels = c("0", "1"))
+actual_factors_2 <- dataset_range_test$is_pop_updated
+
+logistic_regression_confusion_matrix_results_2 <- confusionMatrix(data = predicted_factors_2,
+                                                                reference = actual_factors_2,
+                                                                positive = "1")
+
+print(logistic_regression_confusion_matrix_results_2)
+
+#this model is 62.58% accurate
+#my logistic regression model did not have any false positives
+#but had 748 false negatives (missed every popular song/failed to identify them)
+#0% sensitivity - it correctly identified 1251 unpopular songs but did not identify a single popular song
+#100% specificity- my model labelled everything as 0 so had 100% rate of specificity however this is due to the model not being able to predict the positive class (class 1)
+#accuracy value was exactly the same as NIR value (0.6123 - 61.23%) which means my model performs the same as a random guess
+#p-value of 0.51 shows my model is not statistically better than the NIR
+
+
+PseudoR2(logistic_regression_2, which = "Nagelkerke")
+
+#output of 0.004 (0.004080229) shows model is only slightly better when explicit is included
+
+roc_curve_2 <- roc(dataset_range_test$is_pop_updated, test_probabilities_2)
+
+print(paste("The AUC is:", auc(roc_curve_2)))
+#my AUC value is 0.525 so actually marginally better than my first model
+
+line_color_2 <- viridis(10)[5] 
+
+plot(roc_curve_2, 
+     col = line_color_2, 
+     lwd = 3, 
+     main = "Logistic Regression 2: ROC Curve", 
+     print.auc = TRUE,
+     print.auc.x = 0.5, print.auc.y = 0.4,
+     grid = TRUE,
+     lty = 1)
+abline(a = 1, b = -1, lty = 2, col = "grey70")
+
+#plotting confusion matrix for visual reference: logistic regression 2 (best performing lgr model)
+
+cm_lgr_df <- as.data.frame(logistic_regression_confusion_matrix_results_2$table)
+
+colnames(cm_lgr_df) <- c("Predicted", "Actual", "Freq")
+
+cf_lgr_comparison <- ggplot(cm_lgr_df, aes(x = Predicted, y = Actual, fill = Freq)) +
+  geom_tile(color = "white", lwd = 1) +
+  geom_text(aes(label = Freq), 
+            size = 6, 
+            fontface = "bold", 
+            color = ifelse(cm_lgr_df$Predicted == "1", "white", "black")) +
+  scale_fill_viridis_c(option = "viridis", direction = 1) + 
+  labs(
+    title = "Confusion Matrix: Logistic Regression 2",
+    x = "Predicted",
+    y = "Actual",
+    fill = "Frequency"
+  ) +
+  theme_minimal() +
+  theme(
+    panel.grid.major = element_blank(), 
+    axis.text = element_text(size = 12, face = "bold"),
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  )
+
+cf_lgr_comparison
+
+#ran model twice with energy and loudness separately loaded into the model due to multicolinearity test showing high positive correlation but got the same accuracy of 61.23% value so model stayed same despite moving around these characteristics- nagelkerke value was highest when both characteristics were included in the model however
+
+#-----------------------------------------------------------------------------------------------------------------------------------------
+
+#showing if there is a significant relationship between musical characteristics (independent variables) to check multicollinearity which could affect the model
+
+#if VIF values are 1 or less than, then there isn't sufficient evidence to suggest there's a significant statistical relationship between predictors 
+#ideally i would like these to be low, indicating the independent variables are not influencing one another within the model
+
+set.seed(345)
+
+
+vif_musical_char <- vif(logistic_regression)
+print(vif_musical_char)
+
+#my highest VIF value was for energy (3.10) and may be overlapping with loudness (2.19) as these are the two highest values- this corroborates my earlier test finding a high positive relationship between these two variables
+#however below 5 is still considered a generally acceptable level of correlation
+#all other variables showed values between 1 and 2, with liveness (1.04) and tempo (1.09) showing close to no correlation with other variables
+
+summary(logistic_regression)
+
+#showing summary table to show the comparison of p-values across my variables
+
+sjPlot::tab_model(logistic_regression)
+
+#my summary of logistic regression 1 shows the only significant predictor of song popularity is speechiness (0.0162)
+#every other feature has a p-value that is a lot higher than 0.05 (for example instrumentalness and energy are 0.9)
+#my output for my coefficients estimate indicates that higher speechiness decreases probability of a song becoming popular
+#my null and residual deviance values being so close also suggests my model performs almost the same as a model containing no predictive factors (6192.1 and 6177.9 respectively)
+#the only musical characteristic showing significance is speechiness (0.028)
+
+
+#performing the same again for my 2nd logistic regression to see if there are differences
+vif_musical_char_2 <- vif(logistic_regression_2)
+print(vif_musical_char_2)
+
+#my highest value was for energy (3.12) and loudness (2.22) showing these two characteristics likely have some level of overlap
+#every other value was between 1 and 2
+
+summary(logistic_regression_2)
+
+#there are no significant predictors
+#showing summary table to show the comparison of p-values across my variables
+
+sjPlot::tab_model(logistic_regression_2)
+
+#if p values are greater than .05 then there isn't sufficient evidence to suggest there's a significant statistical relationship between predictor and popularity
+
+
+
+#attempting to visually show feature importance for this model since it performed best
+
+coef_data <- as.data.frame(summary(logistic_regression_2)$coefficients)
+coef_data$Feature <- rownames(coef_data)
+
+coef_data$Feature <- gsub("TRUE", "", coef_data$Feature)
+coef_data$Feature <- gsub("is_pop_updated", "", coef_data$Feature)
+
+coef_data <- coef_data[coef_data$Feature != "(Intercept)", ]
+
+ggplot(coef_data, aes(x = reorder(Feature, `z value`), y = `z value`, fill = `z value`)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  scale_fill_viridis_c() +
+  labs(title = "Feature Importance of Logistic Regression 2\n(highest performing)",
+       x = "Variable",
+       y = "z-score") +
+  theme_minimal()
+
+#z score allows comparison of variables that have been measured differently
+#z scores furthest away from 0 indicate my model is more confident the variable is a real predictor of popularity
+#my plot indicates that increases in energy and loudness increase popularity
+#and that decreases in speechiness, danceability and acousticness increase popularity
+#liveness and loudness are nearest to 0 so the model determines these are not reliable predictors of popularity
+
+
+#electing to perform a stepwise regression for my best performing LGR to see if a more simple model performs better since most of my variables were not useful/had no predictive value
+
+stepwise_model <- step(logistic_regression_2, direction = "both")
+
+summary(stepwise_model)
+
+#my SWR only kept energy, speechiness, and tempo
+
+stepwise_probabilities <- predict(stepwise_model, 
+                                  newdata = dataset_range_test, 
+                                  type = "response")
+
+roc_stepwise <- roc(dataset_range_test$is_pop_updated, stepwise_probabilities)
+
+roc_stepwise_col <- viridis(10)[8]
+
+plot(roc_stepwise, 
+     col = roc_stepwise_col, 
+     main = "ROC Curve: Stepwise Logistic Regression", 
+     lwd = 3, 
+     print.auc = TRUE)
+
+
+odds_ratios_swr <- exp(coef(stepwise_model))
+print(odds_ratios_swr)
+
+#values between 1.34 (energy) and 0.42 (speechiness)
+
+test_probabilities_swr <- predict(stepwise_model, 
+                                newdata = dataset_range_test, 
+                                type = "response")
+test_predictions_scores_swr <- ifelse(test_probabilities_2 > 0.5, "1", "0")
+
+predicted_factors_swr <- factor(test_predictions_scores_2, levels = c("0", "1"))
+actual_factors_swr <- dataset_range_test$is_pop_updated
+
+swr_matrix_results <- confusionMatrix(data = predicted_factors_swr,
+                                                                  reference = actual_factors_swr,
+                                                                  positive = "1")
+
+print(swr_matrix_results)
+
+
+PseudoR2(stepwise_model, which = "Nagelkerke")
+
+#creating confusion matrix heatmap to compare with best random forest
+
+cm_swr_df <- as.data.frame(swr_matrix_results$table)
+
+colnames(cm_swr_df) <- c("Predicted", "Actual", "Freq")
+
+cf_lgr_comparison <- ggplot(cm_swr_df, aes(x = Predicted, y = Actual, fill = Freq)) +
+  geom_tile(color = "white", lwd = 1) +
+  geom_text(aes(label = Freq), 
+            size = 6, 
+            fontface = "bold", 
+            color = ifelse(cm_lgr_df$Predicted == "1", "white", "black")) +
+  scale_fill_viridis_c(option = "viridis", direction = 1) + 
+  labs(
+    title = "Confusion Matrix: Stepwise Regression (LGR 2)",
+    x = "Predicted",
+    y = "Actual",
+    fill = "Frequency"
+  ) +
+  theme_minimal() +
+  theme(
+    panel.grid.major = element_blank(), 
+    axis.text = element_text(size = 12, face = "bold"),
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  )
+
+cf_lgr_comparison
+
+
+#this model kept only energy, speechiness* and tempo and performed basically the same
+#speechiness is the strongest predictor and also significant (-0.85, p-value = 0.011)
+#stepwise model performed only slightly better but null and residual deviance are still similar values (6182.2 and 6170.1 respectively)
+#musical characteristics appear to not be able to influence a song's popularity
+
+
+#plotting stepwise and original for best performing LGR 
+#checking if removing variables hurt the model's performance
+
+full_model_col     <- viridis(10)[5]
+stepwise_model_col <- viridis(10)[8]
+
+plot(roc_curve_2, 
+     col = full_model_col, 
+     lwd = 3, 
+     main = "Model Comparison: Full vs. Stepwise Selection",
+     grid = TRUE)
+
+plot(roc_stepwise, 
+     col = stepwise_model_col, 
+     lwd = 3, 
+     add = TRUE)
+abline(a = 1, b = -1, lty = 2, col = "grey")
+
+legend("bottomright", 
+       legend = c(
+         paste("Full Model (AUC =", round(auc(roc_curve_2), 3), ")"), 
+         paste("Stepwise Model (AUC =", round(auc(roc_stepwise), 3), ")"),
+         "Random Chance"
+       ), 
+       col = c(full_model_col, stepwise_model_col, "grey"), 
+       lwd = c(3, 3, 2),
+       lty = c(1, 1, 2),
+       bty = "n", 
+       cex = 0.8)
+
+
+#putting all 3 on one graph to compare
+
+initial_model_col  <- viridis(10)[2] 
+full_model_col     <- viridis(10)[5]
+stepwise_model_col <- viridis(10)[8]
+
+plot(roc_curve, 
+     col = initial_model_col, 
+     lwd = 3, 
+     main = "AUC comparison: Logistic Regression",
+     grid = TRUE)
+
+plot(roc_curve_2, 
+     col = full_model_col, 
+     lwd = 3, 
+     add = TRUE)
+
+plot(roc_stepwise, 
+     col = stepwise_model_col, 
+     lwd = 3, 
+     add = TRUE)
+
+abline(a = 1, b = -1, lty = 2, col = "grey")
+legend("bottomright", 
+       legend = c(
+         paste("Logistic Regression 1 (AUC =", round(auc(roc_curve), 3), ")"), 
+         paste("Logistic Regression 2 (AUC =", round(auc(roc_curve_2), 3), ")"),
+         paste("Stepwise Model (AUC =", round(auc(roc_stepwise), 3), ")"),
+         "Random Chance"
+       ), 
+       col = c(initial_model_col, full_model_col, stepwise_model_col, "grey"), 
+       lwd = c(3, 3, 3, 2),
+       lty = c(1, 1, 1, 2),
+       bty = "n",
+       cex = 0.7)
+
+#better model is logistic regression 2
+
+#-----------------------------------------------------------------------------------------------------------------------------------------
+
+#checking linearity assumption
+check_linearity <- function(df, feature, target) {
+  df %>%
+    mutate(bin = ntile(!!sym(feature), 10)) %>% 
+    group_by(bin) %>%
+    summarise(
+      mean_val = mean(!!sym(feature), na.rm = TRUE),
+      count = n(),
+      hits = sum(as.numeric(as.character(!!sym(target))), na.rm = TRUE)
+    ) %>%
+    mutate(
+      prob_adj = (hits + 0.5) / (count - hits + 0.5),
+      logit = log(prob_adj)
+    ) %>%
+    ggplot(aes(x = mean_val, y = logit)) +
+    geom_point(size = 3, color = "turquoise") +
+    geom_line(color = "turquoise", alpha = 0.5) +
+    geom_smooth(method = "lm", se = FALSE, color = "orange", linetype = "dashed") +
+    labs(title = paste("Linearity Check (Logit):", feature),
+         x = paste("Mean", feature), 
+         y = "Log-Odds (Logit)") +
+    theme_minimal()
+}
+
+check_linearity (dataset_range, "energy", "is_pop")
+
+check_linearity (dataset_range, "danceability", "is_pop")
+
+check_linearity (dataset_range, "acousticness", "is_pop")
+
+check_linearity (dataset_range, "speechiness", "is_pop")
+
+check_linearity (dataset_range, "tempo", "is_pop")
+
+check_linearity (dataset_range, "valence", "is_pop")
+
+check_linearity (dataset_range, "liveness", "is_pop")
+
+check_linearity (dataset_range, "loudness", "is_pop")
+
+check_linearity (dataset_range, "instrumentalness", "is_pop")
+
+
+p1 <- check_linearity(dataset_range, "energy", "is_pop")
+p2 <- check_linearity(dataset_range, "danceability", "is_pop")
+p3 <- check_linearity(dataset_range, "acousticness", "is_pop")
+p4 <- check_linearity(dataset_range, "speechiness", "is_pop")
+p5 <- check_linearity(dataset_range, "tempo", "is_pop")
+p6 <- check_linearity(dataset_range, "valence", "is_pop")
+p7 <- check_linearity(dataset_range, "liveness", "is_pop")
+p8 <- check_linearity(dataset_range, "loudness", "is_pop")
+p9 <- check_linearity(dataset_range, "instrumentalness", "is_pop")
+
+
+linearity_grid <- (p1 + p2 + p3) / 
+  (p4 + p5 + p6) / 
+  (p7 + p8 + p9)
+
+
+linearity_grid + plot_annotation(
+  title = "Linearity Checks for Logistic Regression",
+  subtitle = "Evaluating the Log-Odds relationship for musical features",
+  theme = theme(plot.title = element_text(size = 16, face = "bold"))
+)
+
+#-----------------------------------------------------------------------------------------------------------------------------------------
+
+#electing to use another model to check for non-linear relationships
+#random forest does not assume linearity
+
+
+#RANDOM FOREST
+
+
+
+set.seed(345)
+
+dataset_range_updated <- dataset_range_updated[sample(1:nrow(dataset_range_updated)), ]
+
+#using 70% of data for training, and remaining 30% for testing the model
+
+train_size = 0.7
+train_indices <- 1:round(train_size * nrow(dataset_range_updated))
+
+dataset_range_train <- dataset_range_updated[train_indices, ]
+dataset_range_test  <- dataset_range_updated[-train_indices, ]
+
+dataset_range_train$is_pop_updated <- factor(dataset_range_train$is_pop_updated, levels = c("0", "1"))
+dataset_range_test$is_pop_updated  <- factor(dataset_range_test$is_pop_updated, levels = c("0", "1"))
+
+levels(dataset_range_train$is_pop_updated) 
+levels(dataset_range_test$is_pop_updated)
+
+
+#training my model
+
+random_forest <- randomForest(is_pop_updated ~ acousticness + danceability + energy + instrumentalness + liveness + loudness + speechiness + valence + tempo,
+                              data = dataset_range_train,
+                              ntree = 500,
+                              importance = TRUE)
+
+print(random_forest)
+
+
+#my model had 297 false positives where it predicted a song was popular when it was not
+#it also had 1547 false negatives where it missed popular songs and predicted they would be non-popular when they actually were
+#it correctly identified 2632 unpopular songs, and 187 popular songs
+
+#testing my model
+
+random_forest_predictions <- predict(random_forest, 
+                                     newdata = dataset_range_test, 
+                                     type = "class")
+
+
+#evaluating model using CONFUSION MATRIX
+
+actual_factors <- factor(dataset_range_test$is_pop_updated, levels = c("0", "1"))
+
+random_forest_confusion_matrix_results <- confusionMatrix(data = random_forest_predictions,
+                                                          reference = actual_factors,
+                                                          positive = "1")
+
+print(random_forest_confusion_matrix_results)
+
+#my confusion matrix shows accuracy of 0.5963 (59.63%) which is lower than the NIR value 0.6123 (61.23%)
+#model is actually performing worse than random guessing
+#sensitivity value shows 0.09032 (9.032%)- meaning my model only caught 9% of the actually popular songs
+#specificity value shows 0.91667 (91.667%)- model is biased towards predicting 0 class so has better performance identifying non-popular songs (class 0)
+#random forest only slightly better than logistic regression model since sensitivity moved from 0% to 9%
+
+#the model is good at identifying not popular songs (91.7%)
+#the model is bad at identifying popular songs (9.03%)
+
+#calculating AUC for the random forest using same logic as before
+
+random_forest_probabilities <- predict(random_forest, 
+                                       newdata = dataset_range_test, 
+                                       type = "prob")[, "1"]
+
+random_forest_roc_obj <- roc(response = dataset_range_test$is_pop_updated, 
+                             predictor = random_forest_probabilities)
+
+print(paste("The Random Forest AUC is:", auc(random_forest_roc_obj)))
+
+#my AUC value is 0.506 so actually performs worse than my logistic regressions
+
+rf_magma_col <- magma(10)[7]
+
+plot(random_forest_roc_obj, 
+     col = rf_magma_col, 
+     lwd = 3, 
+     main = "AUC Curve: Random Forest 1", 
+     print.auc = TRUE,
+     print.auc.x = 0.5, print.auc.y = 0.3,
+     grid = TRUE,
+     grid.col = "gray90")
+abline(a = 1, b = -1, lty = 2, col = "grey")
+
+
+#----------------------------------------------------------------------------------------------------
+#running second random forest to include explicitness
+
+set.seed(345)
+random_forest_2 <- randomForest(is_pop_updated ~ acousticness + danceability + instrumentalness + liveness + loudness + energy + speechiness + valence + tempo + explicit,
+                              data = dataset_range_train,
+                              ntree = 500,
+                              importance = TRUE)
+
+print(random_forest_2)
+
+
+random_forest_predictions_2 <- predict(random_forest_2, 
+                                     newdata = dataset_range_test, 
+                                     type = "class")
+
+
+
+actual_factors_2 <- factor(dataset_range_test$is_pop_updated, levels = c("0", "1"))
+
+random_forest_confusion_matrix_results_2 <- confusionMatrix(data = random_forest_predictions_2,
+                                                          reference = actual_factors_2,
+                                                          positive = "1")
+
+print(random_forest_confusion_matrix_results_2)
+
+#my confusion matrix shows accuracy of 0.58.93 (58.93%) which is lower than the NIR value 0.6123 (61.23%)
+#model is actually performing worse than random guessing
+#sensitivity value shows 0.07871 (7.87%)- meaning my model only caught 7.9% of the actually popular songs
+#specificity value shows 0.91258 (91.26%)- model is biased towards predicting 0 class so has better performance identifying non-popular songs (class 0)
+#random forest 2 worse than random forest 1 since sensitivity moved from 9% to 7%
+
+
+#confusion matrix plot for 1st random forest (best performing)
+
+cm_rf_table <- random_forest_confusion_matrix_results$table
+
+cm_rf_long <- as.data.frame(cm_rf_table)
+
+colnames(cm_rf_long) <- c("Predicted", "Actual", "Count")
+
+cm_rf_comparison <- ggplot(cm_rf_long, aes(x = Predicted, y = Actual, fill = Count)) +
+  geom_tile(color = "white", lwd = 1) +
+  geom_text(aes(label = Count), 
+            size = 6, 
+            fontface = "bold",
+            color = ifelse(cm_rf_long$Predicted == "1", "white", "black")) +
+  scale_fill_viridis_c(option = "magma", direction = 1) + 
+  labs(
+    title = "Confusion Matrix: Random Forest 1",
+    x = "Predicted",
+    y = "Actual",
+    fill = "Frequency"
+  ) +
+  theme_minimal() +
+  theme(
+    panel.grid.major = element_blank(),
+    axis.text = element_text(size = 12, face = "bold"),
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  )
+
+cm_rf_comparison
+
+#finding AUC for random forest 2
+random_forest_probabilities_2 <- predict(random_forest_2, 
+                                         newdata = dataset_range_test, 
+                                         type = "prob")[, "1"]
+
+random_forest_roc_obj_2 <- roc(response = dataset_range_test$is_pop_updated, 
+                               predictor = random_forest_probabilities_2)
+
+print(paste("The Random Forest AUC is:", auc(random_forest_roc_obj_2)))
+
+rf_magma_col2 <- magma(10)[4]
+plot(random_forest_roc_obj_2, 
+     main = "AUC Curve: Random Forest 2", 
+     col = rf_magma_col2, 
+     lwd = 3, 
+     print.auc = TRUE,
+     grid = TRUE,
+     grid.col = "gray90")
+abline(a = 1, b = -1, lty = 2, col = "grey")
+
+#comparing AUC curves of both random forest models
+
+rf1_col <- magma(10)[4] 
+rf2_col <- magma(10)[7] 
+
+plot(random_forest_roc_obj_2, 
+     col = rf2_col, 
+     lwd = 3, 
+     main = "AUC Comparison: Random Forest",
+     print.auc = FALSE,
+     grid = TRUE)
+
+plot(random_forest_roc_obj, 
+     col = rf1_col, 
+     lwd = 3, 
+     add = TRUE) 
+abline(a = 1, b = -1, lty = 2, col = "grey")
+legend("bottomright", 
+       legend = c(
+         paste("Random Forest 2 (AUC =", round(auc(random_forest_roc_obj_2), 3), ")"), 
+         paste("Random Forest 1 (AUC =", round(auc(random_forest_roc_obj), 3), ")"),
+         "Random Chance"
+       ), 
+       col = c(rf2_col, rf1_col, "grey"), 
+       lwd = c(3, 3, 2),   
+       lty = c(1, 1, 2),
+       bty = "n",          
+       cex = 0.8)
+
+
+#side-by-side confusion matrices for best performing models
+
+
+cf_lgr_comparison + cm_rf_comparison + plot_annotation(title = "Comparison of Confusion Matrices",
+                                                       theme = theme(plot.title = element_text(size = 18, face = "bold")))
+
+
+
+#comparing AUC of 2 random forest models
+
+rf1_col <- magma(10)[4] 
+rf2_col <- magma(10)[7] 
+
+plot(random_forest_roc_obj_2, 
+     col = rf2_col, 
+     lwd = 3, 
+     main = "AUC Comparison: Random Forest",
+     print.auc = FALSE,
+     grid = TRUE)
+
+plot(random_forest_roc_obj, 
+     col = rf1_col, 
+     lwd = 3, 
+     add = TRUE) 
+abline(a = 1, b = -1, lty = 2, col = "grey")
+legend("bottomright", 
+       legend = c(
+         paste("Random Forest 2 (AUC =", round(auc(random_forest_roc_obj_2), 3), ")"), 
+         paste("Random Forest 1 (AUC =", round(auc(random_forest_roc_obj), 3), ")"),
+         "Random Chance"
+       ), 
+       col = c(rf2_col, rf1_col, "grey"), 
+       lwd = c(3, 3, 2),   
+       lty = c(1, 1, 2),
+       bty = "n",          
+       cex = 0.8)
+
+
+#side-by-side confusion matrices for best performing models
+library(patchwork)
+
+cf_lgr_comparison + cm_rf_comparison + plot_annotation(title = "Comparison of Confusion Matrices",
+                                                       theme = theme(plot.title = element_text(size = 18, face = "bold")))
+
+
+
+#comparing AUC of 2 best performing models
+
+lr_col <- viridis(10)[8]
+rf_col <- magma(10)[4]
+
+plot(roc_stepwise, 
+     col = lr_col, 
+     lwd = 3, 
+     main = "Model Comparison: (Stepwise) Logistic Regression vs. Random Forest",
+     grid = TRUE)
+plot(random_forest_roc_obj, 
+     col = rf_col, 
+     lwd = 3, 
+     add = TRUE)
+abline(a = 1, b = -1, lty = 2, col = "grey")
+legend("bottomright", 
+       legend = c(
+         paste("Stepwise Regression (AUC =", round(auc(roc_stepwise), 3), ")"), 
+         paste("Random Forest 2 (AUC =", round(auc(random_forest_roc_obj), 3), ")"),
+         "Random Chance"
+       ), 
+       col = c(lr_col, rf_col, "grey"), 
+       lwd = c(3, 3, 2),
+       lty = c(1, 1, 2),
+       bty = "n",
+       cex = 0.8)
+
+#random forest has best predictive power
+
+#ran model with only energy or loudness and the accuracy was higher when both were included in the model
+
+#----------------------------------------------------------------------------------------------------
+
+#viewing which musical characteristics variables are more important when predicting popularity for the best performing RF model
+
+varImpPlot(random_forest_2)
+
+importance(random_forest_2)
+
+varImpPlot(random_forest_2, main = "Variable Importance for Song Popularity",
+           col = "#51127C", 
+           pch = 19)
+
+#alternative visualisation to keep magma palette consistent
+imp_data <- as.data.frame(random_forest_2$importance)
+imp_data$Feature <- rownames(imp_data)
+colnames(imp_data)[1] <- "Importance"
+
+imp_data <- imp_data[order(imp_data$Importance, decreasing = TRUE), ]
+imp_data$Feature <- factor(imp_data$Feature, levels = imp_data$Feature)
+
+ggplot(imp_data, aes(x = Importance, y = reorder(Feature, Importance), fill = Importance)) +
+  geom_bar(stat = "identity") +
+  scale_fill_viridis_c(option = "magma", direction = 1) +
+  labs(
+    title = "Variable Importance: Random Forest",
+    subtitle = "Measured by Mean Decrease in Gini Impurity",
+    x = "Importance (Gini)",
+    y = "Musical Feature"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    panel.grid.minor = element_blank(),
+    axis.text = element_text(face = "bold")
+  )
+
+#these results are effected by the imbalanced dataset and the model is poor at performing it's purpose (identifying popular songs based on their characteristics)
+#-----------------------------------------------------------------------------------------------------------------------------------------
+
+#showing parameters of my logistic regressions
+
+
+
+tidy_table <- tidy(logistic_regression, exponentiate = TRUE, conf.int = TRUE)
+
+print(tidy_table)
+
+tidy_table2 <- tidy(logistic_regression_2, exponentiate = TRUE, conf.int = TRUE)
+
+print(tidy_table2)
+
+
+sjPlot::tab_model(logistic_regression_2)
+
+sjPlot::tab_model(stepwise_model)
+
+
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
