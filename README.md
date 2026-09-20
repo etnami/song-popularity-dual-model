@@ -2,7 +2,7 @@
 
 MSc coursework project (University of Sheffield), Grade: 78 (Distinction). Tests whether 9 acoustic features plus explicitness can predict whether a song is popular, using two model families (logistic regression and Random Forest), each run with and without the explicitness variable, plus a stepwise-reduced logistic regression.
 
-> **Reproducibility note:** the raw dataset (merged Spotify-style track, artist, and popularity files) is not included in this repo, so `song_pop_code.Rmd` cannot be rerun end-to-end from this repo alone. All headline numbers below were traced to specific lines of the code and cross-checked against the coursework's own results tables rather than taken from the write-up's prose; see the Verification note for exactly what that involved, including two real bugs found in the original code.
+> **Reproducibility note:** the raw dataset (merged Spotify-style track, artist, and popularity files) is not included in this repo, so `song_pop_code.Rmd` cannot be rerun end-to-end from this repo alone. All headline numbers below were traced to specific lines of the code and cross-checked against my coursework results tables rather than taken from my write-up's prose; see the Verification note, which covers two bugs I found in my submitted code.
 
 ## Key results
 
@@ -16,14 +16,14 @@ Five models were fit in total: two logistic regressions (with and without `expli
 | Random Forest 1 (no explicit)* | 59.63% | 91.67% | **9.03%** | 0.506 |
 | Random Forest 2 (+ explicit) | 58.93% | 91.26% | 7.87% | 0.511 |
 
-\* Marked as the best-performing model of its type in the coursework's own results tables.
-† These three figures for SWR are very likely inaccurate: see Verification note below. Only SWR's AUC (0.524) was independently confirmed by its own ROC computation.
+\* Marked as the best-performing model of its type in my coursework results tables.
+† SWR accuracy, specificity and sensitivity are shown as n/a because my code reused another model's predictions (see Verification note); only its AUC (0.524) was computed correctly.
 
-**The counterintuitive finding the coursework is built around:** Random Forest 2 has a *higher* AUC than Random Forest 1 (0.511 vs. 0.506), but *lower* sensitivity (7.87% vs. 9.03%). Since the whole point of a popularity classifier is catching popular songs, and sensitivity is what measures that, RF1 (not RF2) is the better model despite its lower AUC. Both logistic regressions and the stepwise model scored exactly 0% sensitivity: they never predicted a single song as popular, so their "specificity" and "accuracy" numbers are artifacts of always guessing the majority class, not evidence the models found anything.
+**Main finding:** every model performs close to chance (AUC 0.506-0.525). Both logistic regressions never predicted a popular song (0% sensitivity), so their high accuracy and specificity only reflect the 62% not-popular majority. The Random Forests do flag some songs as popular, but RF1's hit rate (9.0% sensitivity) is barely above its false-alarm rate (8.3%, from 91.67% specificity), which is what chance would give. RF1 has higher sensitivity than RF2, while RF2 has the higher AUC (0.511 vs 0.506), but the differences are small, come from one test split, and have no confidence intervals.
 
 ![Random Forest 1 vs Random Forest 2: AUC comparison](figures/rf1_vs_rf2_auc_comparison.png)
 
-**Feature importance (Random Forest, explicit-inclusive model):** loudness and energy were the strongest predictors by Mean Decrease Accuracy; tempo and speechiness by Mean Decrease Gini. Note this chart is only available for Random Forest 2, since the underlying code never generated a separate importance plot for Random Forest 1.
+**Feature importance (Random Forest, explicit-inclusive model):** loudness and energy were the strongest predictors by Mean Decrease Accuracy; tempo and speechiness by Mean Decrease Gini. Note this chart is only available for Random Forest 2, since my code never generated a separate importance plot for Random Forest 1.
 
 ![Random Forest 2 variable importance](figures/rf2_feature_importance.png)
 
@@ -48,7 +48,6 @@ Five models were fit in total: two logistic regressions (with and without `expli
 ```
 song-popularity-dual-model/
 ├── README.md                                    ← you are here
-├── song_popularity_results_and_conclusions.pdf  ← Results, Discussion and Conclusions sections only (not the full write-up)
 ├── song_pop_code.Rmd                                  ← full analysis code
 └── figures/
     ├── rf1_vs_rf2_auc_comparison.png
@@ -78,26 +77,15 @@ song-popularity-dual-model/
 
 ## Data
 
-The underlying track/artist/popularity dataset is not redistributed here (Spotify-derived data, not the coursework author's to redistribute). `song_pop_code.Rmd` is included in full so the methodology is auditable even though it can't be rerun without the source files.
+The underlying track/artist/popularity dataset is not redistributed here (Spotify-derived data, not mine to redistribute). `song_pop_code.Rmd` is included in full so the methodology is auditable even though it can't be rerun without the source files.
 
 ## Limitations
 
-- Every model's AUC sits close to 0.5 (random chance); the coursework's own conclusion is that acoustic features have little to no predictive power for popularity on their own, not that one model "solved" the problem.
-- Both full logistic regressions and the stepwise model scored 0% sensitivity: they classified every single test-set song as not-popular. Their accuracy and specificity numbers reflect the class balance (62% not-popular), not genuine predictive skill.
-- No figure in the original materials directly and correctly shows "Stepwise Regression vs. Random Forest 1" (the coursework's own two best-of-type models) side by side with accurate labels; see Verification note for why, and the table above for the numbers instead.
-- Random Forest 1 (the officially best-performing RF model) never got its own feature-importance plot in the code; the only importance chart available is for Random Forest 2.
+- Every model's AUC sits close to 0.5 (random chance); my conclusion is that acoustic features have little to no predictive power for popularity on their own, not that one model "solved" the problem.
+- Both full logistic regressions scored 0% sensitivity: they classified every single test-set song as not-popular. Their accuracy and specificity numbers reflect the class balance (62% not-popular), not genuine predictive skill.
+- Random Forest 1 (the higher-sensitivity RF model) never got its own feature-importance plot in the code; the only importance chart available is for Random Forest 2.
+- Results come from a single 70/30 split with no confidence intervals, so small differences between models (e.g. AUC 0.506 vs 0.511) should not be over-read.
 
 ## Verification note
 
-This project's source code and write-up contained two genuine bugs, found by tracing every number back to the line that produced it rather than trusting the write-up's prose or a plausible-looking chart title.
-
-**Bug 1: the Stepwise Regression's confusion matrix is very likely a duplicate of Logistic Regression 2's.** The code that builds the stepwise model's predicted classes does this:
-```r
-test_probabilities_swr <- predict(stepwise_model, ...)              # correctly computed...
-test_predictions_scores_swr <- ifelse(test_probabilities_2 > 0.5, ...)  # ...but never used: this reuses LGR2's probabilities instead
-```
-The coursework's own results table (SWR: 62.58% accuracy, 100% specificity, 0% sensitivity) is identical to Logistic Regression 2's, which is consistent with this bug rather than an independent result. Only SWR's AUC (0.524) was computed via a separate, correct path (`roc_stepwise`) and can be trusted.
-
-**Bug 2: the original code's final "best vs. best" comparison chart plots the right model but labels it wrong.** A block titled `"Model Comparison: (Stepwise) Logistic Regression vs. Random Forest"` plots `random_forest_roc_obj` (Random Forest 1's actual ROC data, AUC 0.506, which matches the coursework's own asterisked "best" RF model) but its legend text calls it **"Random Forest 2."** A different, separately-supplied version of this same chunk fixes the label by instead plotting Random Forest 2's data, which makes the chart internally consistent but compares against the RF model the coursework's own tables call the worse one. Per the decision made when rebuilding this repo, the number reported above for the final comparison uses Random Forest 1 (matching the coursework's own stated conclusion), with the original mislabeling corrected rather than carried forward.
-
-Everything else (the individual model metrics in the headline table, the RF1-vs-RF2 AUC chart, the feature importance chart, the correlation and boxplot figures) was traced directly to the code that produced it and matched.
+While tracing each figure back to the code, I found two bugs in my submitted coursework. (1) The stepwise model's predicted classes reuse Logistic Regression 2's probabilities (`test_probabilities_2` instead of `test_probabilities_swr`), so its accuracy, specificity and sensitivity are unreliable; only its AUC (0.524) comes from its own ROC computation. (2) The original final comparison chart labelled Random Forest 1's curve as "Random Forest 2"; that chart is not included here. All other figures matched the code that produced them.
