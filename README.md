@@ -19,7 +19,7 @@ Five models were fit in total: two logistic regressions (with and without `expli
 \* Marked as the best-performing model of its type in my coursework results tables.
 † SWR accuracy, specificity and sensitivity are shown as n/a because my code reused another model's predictions (see Verification note); only its AUC (0.524) was computed correctly.
 
-**Main finding:** every model performs close to chance (AUC 0.506-0.525). Both logistic regressions never predicted a popular song (0% sensitivity), so their high accuracy and specificity only reflect the 62% not-popular majority. The Random Forests do flag some songs as popular, but RF1's hit rate (9.0% sensitivity) is barely above its false-alarm rate (8.3%, from 91.67% specificity), which is what chance would give. RF1 has higher sensitivity than RF2, while RF2 has the higher AUC (0.511 vs 0.506), but the differences are small, come from one test split, and have no confidence intervals.
+**Main finding:** every model performs close to chance (AUC 0.506-0.525). Both logistic regressions never predicted a popular song (0% sensitivity), so their high accuracy and specificity only reflect the 62% not-popular majority. The Random Forests do flag some songs as popular, but RF1's hit rate (9.0% sensitivity) is barely above its false-alarm rate (8.3%, from 91.67% specificity), which is what chance would give. RF1 has higher sensitivity than RF2, while RF2 has the higher AUC (0.511 vs 0.506), but the differences are small, come from single test splits, and have no confidence intervals.
 
 ![Random Forest 1 vs Random Forest 2: AUC comparison](figures/rf1_vs_rf2_auc_comparison.png)
 
@@ -37,6 +37,7 @@ Five models were fit in total: two logistic regressions (with and without `expli
 
 ## Methods & tools
 
+- **Data:** MusicOSet (Silva et al., 2019). I merged 4 of its 13 tables on song ID, kept 2000-2018 (loudness is inconsistently scaled before 2000), removed collaborations to keep solo songs only, and dropped the 10 rows with missing values left after the joins, leaving 6,662 songs. "Popular" (`is_pop`) is MusicOSet's Billboard-based label: each song gets a year-end score from its peak position and weeks on the Hot 100, songs scoring above that year's average are labelled popular, and the lowest scorers are labelled not popular (2,509 popular, 37.7%; 4,153 not popular, 62.3%).
 - **Language:** R (R Markdown)
 - **Data split:** 70/30 train/test, shuffled with a fixed seed
 - **Models:** logistic regression (`glm`, binomial), bidirectional stepwise selection (`step`), Random Forest (`randomForest`, 500 trees, permutation-based importance)
@@ -81,11 +82,12 @@ The underlying track/artist/popularity dataset is not redistributed here (Spotif
 
 ## Limitations
 
-- Every model's AUC sits close to 0.5 (random chance); my conclusion is that acoustic features have little to no predictive power for popularity on their own, not that one model "solved" the problem.
+- Every model's AUC sits close to 0.5 (random chance). My write-up concludes that a weak non-linear signal exists because Random Forest identified some popular songs (9% sensitivity), but with AUC ~0.51 and accuracy below the no-information rate (59.6% vs 61.2%), that evidence is thin, and the linear models found none (Nagelkerke R² < .01).
 - Both full logistic regressions scored 0% sensitivity: they classified every single test-set song as not-popular. Their accuracy and specificity numbers reflect the class balance (62% not-popular), not genuine predictive skill.
 - Random Forest 1 (the higher-sensitivity RF model) never got its own feature-importance plot in the code; the only importance chart available is for Random Forest 2.
-- Results come from a single 70/30 split with no confidence intervals, so small differences between models (e.g. AUC 0.506 vs 0.511) should not be over-read.
+- Each model was evaluated on its own 70/30 split (test-set no-information rates differ: 63.1%, 62.6%, 61.2%) with no confidence intervals, so small differences between models (e.g. AUC 0.506 vs 0.511) should not be over-read, and comparisons across model families are indicative only.
+- The 6,662 rows include 414 with duplicated song names (radio edits, remasters, regional releases), which I kept deliberately. Because the data was shuffled before a random split, variants of the same song can fall in both training and test sets, which may flatter the models.
 
 ## Verification note
 
-While tracing each figure back to the code, I found two bugs in my submitted coursework. (1) The stepwise model's predicted classes reuse Logistic Regression 2's probabilities (`test_probabilities_2` instead of `test_probabilities_swr`), so its accuracy, specificity and sensitivity are unreliable; only its AUC (0.524) comes from its own ROC computation. (2) The original final comparison chart labelled Random Forest 1's curve as "Random Forest 2"; that chart is not included here. All other figures matched the code that produced them.
+While tracing each figure back to the code, I found two bugs in my submitted coursework. (1) The stepwise model's predicted classes reuse Logistic Regression 2's probabilities (`test_probabilities_2` instead of `test_probabilities_swr`), so its accuracy, specificity and sensitivity are unreliable; only its AUC (0.524) comes from its own ROC computation. The reported figures (62.58% accuracy, 100% specificity, 0% sensitivity) are identical to Logistic Regression 2's, consistent with this bug, so I show them as n/a in the table. (2) The original final comparison chart labelled Random Forest 1's curve as "Random Forest 2"; that chart is not included here. All other figures matched the code that produced them.
