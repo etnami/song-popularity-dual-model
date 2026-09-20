@@ -17,7 +17,7 @@ Five models were fit in total: two logistic regressions (with and without `expli
 | Random Forest 2 (+ explicit) | 58.93% | 91.26% | 7.87% | 0.511 |
 
 \* Marked as the best-performing model of its type in my coursework results tables.
-† SWR accuracy, specificity and sensitivity are shown as n/a because my code reused another model's predictions (see Verification note); only its AUC (0.524) was computed correctly.
+SWR accuracy, specificity and sensitivity are shown as n/a because my code reused another model's predictions (see Verification note); only its AUC (0.524) was computed correctly.
 
 **Main finding:** every model performs close to chance (AUC 0.506-0.525). Both logistic regressions never predicted a popular song (0% sensitivity), so their high accuracy and specificity only reflect the 62% not-popular majority. The Random Forests do flag some songs as popular, but RF1's hit rate (9.0% sensitivity) is barely above its false-alarm rate (8.3%, from 91.67% specificity), which is what chance would give. RF1 has higher sensitivity than RF2, while RF2 has the higher AUC (0.511 vs 0.506), but the differences are small, come from single test splits, and have no confidence intervals.
 
