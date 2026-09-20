@@ -12,7 +12,7 @@ Five models were fit in total: two logistic regressions (with and without `expli
 |---|---|---|---|---|
 | Logistic Regression 1 (no explicit) | 63.08% | 100% | 0% | 0.514 |
 | Logistic Regression 2 (+ explicit) | 62.58% | 100% | 0% | 0.525 |
-| Stepwise Regression (SWR)* | 62.58%† | 100%† | 0%† | 0.524 |
+| Stepwise Regression (SWR)\* | n/a | n/a | n/a | 0.524 |
 | Random Forest 1 (no explicit)* | 59.63% | 91.67% | **9.03%** | 0.506 |
 | Random Forest 2 (+ explicit) | 58.93% | 91.26% | 7.87% | 0.511 |
 
