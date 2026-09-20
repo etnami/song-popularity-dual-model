@@ -46,7 +46,7 @@ Five models were fit in total: two logistic regressions (with and without `expli
 ## Repo structure
 
 ```
-02-song-popularity-dual-model/
+song-popularity-dual-model/
 ├── README.md                                    ← you are here
 ├── song_popularity_results_and_conclusions.pdf  ← Results, Discussion and Conclusions sections only (not the full write-up)
 ├── song_pop_code.Rmd                                  ← full analysis code
