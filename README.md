@@ -1,6 +1,6 @@
 # Predicting Song Popularity from Musical Composition Features: A Dual-Model Approach
 
-Undergraduate/MSc coursework project (University of Sheffield), Grade: 78 (Distinction). Tests whether 9 acoustic features plus explicitness can predict whether a song is popular, using two model families (logistic regression and Random Forest), each run with and without the explicitness variable, plus a stepwise-reduced logistic regression.
+MSc coursework project (University of Sheffield), Grade: 78 (Distinction). Tests whether 9 acoustic features plus explicitness can predict whether a song is popular, using two model families (logistic regression and Random Forest), each run with and without the explicitness variable, plus a stepwise-reduced logistic regression.
 
 > **Reproducibility note:** the raw dataset (merged Spotify-style track, artist, and popularity files) is not included in this repo, so `song_pop_code.Rmd` cannot be rerun end-to-end from this repo alone. All headline numbers below were traced to specific lines of the code and cross-checked against the coursework's own results tables rather than taken from the write-up's prose; see the Verification note for exactly what that involved, including two real bugs found in the original code.
 
